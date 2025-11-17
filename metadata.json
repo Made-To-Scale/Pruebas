@@ -1,0 +1,5 @@
+{
+  "name": "Supabase MTS Dashboard",
+  "description": "A clean and minimalist dashboard interface for managing projects, briefs, avatars, and other assets within a Supabase project with an 'mts' schema.",
+  "requestFramePermissions": []
+}
