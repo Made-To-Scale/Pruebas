@@ -102,7 +102,7 @@ const useAvatarResults = (projectId: string | undefined) => {
 
             if (jobIds.length > 0) {
               const { data: outputsData, error: outputsError } = await supabase
-                  .from('avatar_outputs')
+                  .from('avatar_master_outputs')
                   .select('*')
                   .in('job_id', jobIds);
               if (outputsError) throw outputsError;

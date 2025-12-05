@@ -1,288 +1,652 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { CheckCircleIcon } from '../components/Icons';
+import { CheckCircleIcon, DocumentTextIcon, ChatBubbleLeftRightIcon, ExternalLinkIcon, SparklesIcon, ArrowPathIcon, ExclamationTriangleIcon, ShieldExclamationIcon, XCircleIcon } from '../components/Icons';
 
 // --- Types ---
 
-// The raw structure from Supabase
 type BackendAvatar = {
   id: string;
   project_id: string;
   slot: number;
   etiqueta: string | null;
-  profile: any | null; // Can be object or JSON string
-  is_selected: boolean;
-  created_at: string;
+  profile: any | null;
 };
 
-// The normalized structure for the UI
 type NormalizedAvatar = {
   id: string;
   project_id: string;
+  name: string;
+  description: string;
+  age: string | null;
+  gender: string | null;
+  income: string | null;
   slot: number;
-  title: string;
-  headline: string;
-  data: {
-    rango_edad?: string;
-    sexo?: string;
-    nivel_ingresos?: string;
-    nivel_estudios?: string;
-    situacion_laboral?: string;
-    miembros_unidad_familiar?: number;
-    estado_civil?: string;
-    idiomas?: string[];
-    intereses_directos?: string[];
-    intereses_relacionados?: string[];
-    hobbies?: string[];
-    tipos_sitios_web?: string[];
-  };
-  is_selected: boolean;
-  created_at: string;
+  data: any;
 };
 
-// Helper to normalize the incoming avatar data into a consistent shape for the UI
+// Progress tracking for avatars
+type AvatarProgress = {
+    avatarId: string;
+    sectionsCount: number;
+    isReady: boolean;
+};
+
 const normalizeAvatar = (avatar: BackendAvatar): NormalizedAvatar => {
   let profile: any = {};
-  if (avatar.profile && typeof avatar.profile === 'object') {
-    profile = avatar.profile;
-  } else if (typeof avatar.profile === 'string') {
-    try {
-      profile = JSON.parse(avatar.profile);
-    } catch (e) {
-      console.error(`Error parsing profile for avatar ${avatar.id}`, e);
+  if (avatar.profile) {
+    if (typeof avatar.profile === 'object') {
+      profile = avatar.profile;
+    } else if (typeof avatar.profile === 'string') {
+      try {
+        profile = JSON.parse(avatar.profile);
+      } catch (e) {
+        console.error(`Error parsing profile for avatar ${avatar.id}`, e);
+      }
     }
   }
+  const data = profile.data || {};
 
-  const newData = profile.data || {};
-
-  // This handles both old (profile.demografia) and new (profile.data.rango_edad) structures.
-  const data = {
-    rango_edad: newData.rango_edad ?? profile.demografia?.rango_edad,
-    sexo: newData.sexo ?? profile.demografia?.sexo,
-    nivel_ingresos: newData.nivel_ingresos ?? profile.demografia?.nivel_ingresos,
-    nivel_estudios: newData.nivel_estudios ?? profile.demografia?.nivel_estudios,
-    situacion_laboral: newData.situacion_laboral ?? profile.demografia?.situacion_laboral,
-    miembros_unidad_familiar: newData.miembros_unidad_familiar ?? profile.demografia?.miembros_unidad_familiar,
-    estado_civil: newData.estado_civil ?? profile.demografia?.estado_civil,
-    idiomas: newData.idiomas ?? profile.demografia?.idiomas,
-    intereses_directos: newData.intereses_directos ?? profile.intereses?.directos,
-    intereses_relacionados: newData.intereses_relacionados ?? profile.intereses?.relacionados,
-    hobbies: newData.hobbies ?? profile.intereses?.hobbies,
-    tipos_sitios_web: newData.tipos_sitios_web ?? profile.digital?.tipos_sitios_web,
+  // Helper function to check multiple potential keys for a value
+  const getValue = (keys: string[]): string | null => {
+      for (const key of keys) {
+          if (data[key]) return data[key];
+          // Check case-insensitive
+          const lowerKey = Object.keys(data).find(k => k.toLowerCase() === key.toLowerCase());
+          if (lowerKey && data[lowerKey]) return data[lowerKey];
+      }
+      return null;
   };
-  
+
+  const getAvatarDisplayName = (): string => {
+      const candidates = [
+          data?.nombre,
+          profile?.nombre,
+          data?.name,
+          profile?.name
+      ];
+
+      for (const candidate of candidates) {
+          if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+              const clean = candidate.trim();
+              // Validate it's not just "Avatar X" or similar generic placeholders if found in JSON
+              if (!/^avatar\s*\d+$/i.test(clean)) {
+                  return clean;
+              }
+          }
+      }
+
+      // Fallback 1: Database label (etiqueta)
+      if (avatar.etiqueta && avatar.etiqueta.trim().length > 0) {
+          return avatar.etiqueta.trim();
+      }
+
+      // Fallback 2: Generic Slot Name
+      return `Avatar ${avatar.slot}`;
+  };
+
   return {
     id: avatar.id,
     project_id: avatar.project_id,
+    name: getAvatarDisplayName(),
+    description: profile.headline ?? 'Sin descripción.',
+    age: getValue(['rango_edad', 'edad', 'age', 'years', 'rango_de_edad']),
+    gender: getValue(['sexo', 'genero', 'gender', 'sex']),
+    income: getValue(['nivel_ingresos', 'ingresos', 'income', 'nse', 'nivel_socioeconomico']),
     slot: avatar.slot,
-    title: avatar.etiqueta ?? profile.name ?? `Avatar ${avatar.slot}`,
-    headline: profile.headline ?? '',
-    data,
-    is_selected: !!avatar.is_selected,
-    created_at: avatar.created_at,
+    data: data,
   };
 };
 
-type Contexto1 = {
+// --- Context Types (P1 - Market Research) ---
+
+type EvidenceItem = {
+  Ano: string;
+  URL?: string;
+  FuenteEntidad?: string;
+  DatoPorcentaje?: string;
+  IndicadorEstudio?: string;
+};
+
+type AilmentItem = {
+  URL?: string;
+  Fuente: string;
+  DolorSintoma: string;
+  EvidenciaMecanismo: string;
+};
+
+type MarketContextData = {
   ResumenEjecutivo: string;
-  EvidenciasYDatos: {
-    IndicadorEstudio: string;
-    DatoPorcentaje?: string;
-    Ano?: string;
-    FuenteEntidad?: string;
-    URL?: string;
-  }[];
-  DolenciasQueAlivia: {
-    DolorSintoma: string;
-    EvidenciaMecanismo: string;
-    Fuente?: string;
-    URL?: string;
-  }[];
+  EvidenciasYDatos: EvidenceItem[];
+  DolenciasQueAlivia: AilmentItem[];
   InsightsPublicitarios: string[];
 };
 
-type Contexto2 = {
-  query?: string;
-  total_encontrados?: number;
-  comentarios: {
-    comentario: string;
-    sentimiento?: 'positivo' | 'neutral' | 'negativo' | 'mixto';
-    url?: string;
-  }[];
+// --- Context Types (P2 - Social Listening / Radar) ---
+
+type SocialItem = {
+  cita: string;
+  url: string;
+  
+  // Normalized fields for display
+  displayTag: string;   // Maps to dolor_validado, motivo_fallo, or objecion_validada
+  displaySource: string; // Maps to fuente or producto_criticado
 };
 
-type ToastMessage = {
-  message: string;
-  type: 'success' | 'error';
+type SocialContextData = {
+  dolores: SocialItem[];
+  fallos: SocialItem[];
+  objeciones: SocialItem[];
+  total_items: number;
 };
-
-// --- Helper Icons ---
-
-const ExternalLinkIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-    </svg>
-);
-
-const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-);
-
 
 // --- Sub-components ---
 
-const SentimentBadge: React.FC<{ sentiment: string | undefined }> = ({ sentiment }) => {
-    const styles = {
-        positivo: 'bg-green-100 text-green-800',
-        negativo: 'bg-red-100 text-red-800',
-        neutral: 'bg-slate-100 text-slate-800',
-        mixto: 'bg-yellow-100 text-yellow-800',
-    };
-    const sentimentKey = sentiment as keyof typeof styles;
-    return <span className={`px-2 py-0.5 text-xs font-medium rounded-full capitalize ${styles[sentimentKey] || styles.neutral}`}>{sentiment || 'neutral'}</span>;
-};
+const Spinner: React.FC<{className?: string}> = ({className}) => (
+    <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+);
 
-const AvatarDetailModal: React.FC<{ avatar: NormalizedAvatar | null; onClose: () => void }> = ({ avatar, onClose }) => {
-    if (!avatar) return null;
+const ChevronDownIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+  </svg>
+);
 
-    const renderList = (items: any[] | undefined) => {
-        if (!items || items.length === 0) return <p className="text-sm text-slate-500">No disponible.</p>;
-        return (
-            <div className="flex flex-wrap gap-2">
-                {items.map((item, index) => (
-                    <span key={index} className="px-2.5 py-1 bg-slate-100 text-slate-700 text-sm rounded-md">{item}</span>
-                ))}
-            </div>
-        );
-    };
+const ChatBubbleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" className={className}>
+     <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0112 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 01-3.476.383.39.39 0 00-.297.17l-2.755 4.133a.75.75 0 01-1.248 0l-2.755-4.133a.39.39 0 00-.297-.17 48.9 48.9 0 01-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97zM6.75 8.25a.75.75 0 01.75-.75h9a.75.75 0 010 1.5h-9a.75.75 0 01-.75-.75zm.75 2.25a.75.75 0 000 1.5H12a.75.75 0 000-1.5H7.5z" clipRule="evenodd" />
+  </svg>
+);
 
-    const renderDetail = (label: string, value: any) => {
-        if (value === undefined || value === null || value === '') return null;
-        return <p className="text-sm"><span className="font-semibold text-slate-600">{label}:</span> <span className="text-slate-800">{value}</span></p>;
-    }
+// --- Avatar Card Component ---
+
+const AvatarCard: React.FC<{
+  avatar: NormalizedAvatar;
+  progress: AvatarProgress;
+  projectId: string;
+}> = ({ avatar, progress, projectId }) => {
+    const { isReady, sectionsCount } = progress;
+    // Total modules expected is roughly 10
+    const TOTAL_MODULES = 10;
+    const percentage = Math.min(100, Math.round((sectionsCount / TOTAL_MODULES) * 100));
 
     return (
-        <div className="fixed inset-0 bg-black/30 z-50" onClick={onClose}>
-            <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-xl flex flex-col transition-transform duration-300 transform translate-x-0" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b">
-                    <h3 className="text-lg font-semibold text-slate-800">{avatar.title}</h3>
-                    <button onClick={onClose} className="text-slate-500 hover:text-slate-800"><CloseIcon className="w-6 h-6" /></button>
+        <Link 
+            to={`/proyectos/${projectId}/avatares/${avatar.id}/analysis`}
+            className="group relative flex flex-col h-full bg-white rounded-xl border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1 hover:border-indigo-200"
+        >
+            {/* Status Badge */}
+            <div className="absolute top-3 right-3 z-10">
+                {isReady ? (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200 shadow-sm">
+                        <CheckCircleIcon className="w-3.5 h-3.5 mr-1.5" />
+                        Ready
+                    </span>
+                ) : (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm animate-pulse">
+                        <ArrowPathIcon className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        Procesando
+                    </span>
+                )}
+            </div>
+
+            <div className="p-6 flex-grow">
+                {/* Avatar Icon / Placeholder */}
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4 group-hover:bg-indigo-50 transition-colors">
+                     <SparklesIcon className="w-6 h-6 text-slate-400 group-hover:text-indigo-500 transition-colors" />
                 </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    <div>
-                        <h4 className="font-bold text-slate-700 mb-2">Demografía</h4>
-                        <div className="space-y-1">
-                            {renderDetail('Rango de edad', avatar.data.rango_edad)}
-                            {renderDetail('Sexo', avatar.data.sexo)}
-                            {renderDetail('Nivel de ingresos', avatar.data.nivel_ingresos)}
-                            {renderDetail('Nivel de estudios', avatar.data.nivel_estudios)}
-                            {renderDetail('Situación laboral', avatar.data.situacion_laboral)}
-                            {renderDetail('Miembros unidad familiar', avatar.data.miembros_unidad_familiar)}
-                        </div>
-                         <div className="mt-3">
-                            <h5 className="font-semibold text-sm text-slate-600 mb-1">Idiomas</h5>
-                            {renderList(avatar.data.idiomas)}
-                        </div>
-                    </div>
-                     <div>
-                        <h4 className="font-bold text-slate-700 mb-2">Intereses</h4>
-                        <h5 className="font-semibold text-sm text-slate-600 mt-3 mb-1">Directos</h5>
-                        {renderList(avatar.data.intereses_directos)}
-                        <h5 className="font-semibold text-sm text-slate-600 mt-3 mb-1">Relacionados</h5>
-                        {renderList(avatar.data.intereses_relacionados)}
-                        <h5 className="font-semibold text-sm text-slate-600 mt-3 mb-1">Hobbies</h5>
-                        {renderList(avatar.data.hobbies)}
-                    </div>
-                     <div>
-                        <h4 className="font-bold text-slate-700 mb-2">Digital</h4>
-                        <h5 className="font-semibold text-sm text-slate-600 mt-3 mb-1">Tipos de sitios web</h5>
-                        {renderList(avatar.data.tipos_sitios_web)}
-                    </div>
+
+                <h3 className="font-bold text-lg text-slate-800 pr-4 mb-2">{avatar.name}</h3>
+                <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">{avatar.description}</p>
+                
+                {/* Demographics Tags - Only rendered if data exists */}
+                <div className="flex flex-wrap gap-2 mt-4">
+                    {avatar.age && (
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">{avatar.age}</span>
+                    )}
+                    {avatar.gender && (
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">{avatar.gender}</span>
+                    )}
+                    {avatar.income && (
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100 line-clamp-1">{avatar.income}</span>
+                    )}
+                </div>
+            </div>
+
+            {/* Progress Section */}
+            <div className="px-6 pb-6 pt-2">
+                <div className="flex justify-between items-end mb-2">
+                    <span className="text-xs font-medium text-slate-500">
+                        {isReady ? 'Análisis completado' : 'Generando módulos...'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-700">
+                        {sectionsCount}/{TOTAL_MODULES}
+                    </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div 
+                        className={`h-2 rounded-full transition-all duration-700 ease-out ${isReady ? 'bg-green-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${percentage}%` }}
+                    ></div>
+                </div>
+            </div>
+            
+            {/* Hover Action Hint */}
+            <div className="absolute inset-0 rounded-xl border-2 border-indigo-500 opacity-0 group-hover:opacity-10 transition-opacity pointer-events-none"></div>
+        </Link>
+    );
+};
+
+// --- Context Components ---
+
+const SocialItemCard: React.FC<{ item: SocialItem; type: 'dolor' | 'fallo' | 'objecion' }> = ({ item, type }) => {
+    
+    // Configuración visual unificada con branding: 
+    // Borde izquierdo: MTS Green (#18ec5f)
+    // Tag: Fondo Slate suave, Texto MTS Navy (#0b1526)
+    const border = 'border-l-4 border-l-mts-green';
+    const badge = 'bg-slate-100 text-mts-navy border-slate-200';
+    
+    return (
+        <div className={`bg-white p-3 rounded-lg shadow-sm border border-slate-200 ${border} hover:shadow-md transition-shadow group`}>
+            {/* Cita - Main Hero */}
+            <div className="flex items-start gap-3 mb-2">
+                <ChatBubbleIcon className="w-4 h-4 text-slate-300 flex-shrink-0 mt-1 group-hover:text-slate-400 transition-colors" />
+                <p className="text-slate-800 text-base font-bold leading-snug">
+                    "{item.cita}"
+                </p>
+            </div>
+
+            {/* Análisis y Metadata - Supporting */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                
+                {/* Tag moved to left but smaller/subtle */}
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wider ${badge}`}>
+                    {item.displayTag}
+                </span>
+                
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span className="truncate max-w-[200px] font-medium" title={item.displaySource}>
+                        {item.displaySource}
+                    </span>
+                    {item.url && item.url !== '#' && (
+                        <a 
+                            href={item.url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-indigo-500 hover:text-indigo-700 font-medium flex items-center gap-1 hover:underline whitespace-nowrap"
+                            title="Ver contexto original"
+                        >
+                            Ver <ExternalLinkIcon className="w-3 h-3" />
+                        </a>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
 
+interface ContextAccordionItemProps {
+  type: 'market' | 'social';
+  marketData?: MarketContextData;
+  socialData?: SocialContextData;
+  isOpen: boolean;
+  onToggle: () => void;
+}
 
-// --- Main Page Component ---
+const ContextAccordionItem: React.FC<ContextAccordionItemProps> = ({ type, marketData, socialData, isOpen, onToggle }) => {
+  const isMarket = type === 'market';
+  const [activeTab, setActiveTab] = useState<'dolores' | 'fallos' | 'objeciones'>('dolores');
+
+  // Config for header
+  const config = isMarket ? {
+    title: "Radar de evidencia y mercado",
+    subtitle: "Síntesis de papers, datos y estudios sobre la categoría.",
+    badge: "Research cuantitativo",
+    badgeColor: "bg-indigo-100 text-indigo-800",
+    icon: <DocumentTextIcon className="w-5 h-5 text-indigo-600" />,
+  } : {
+    title: "Radar de conversación y cultura digital",
+    subtitle: "Lo que dice la gente real en foros y redes sociales.",
+    badge: socialData ? `${socialData.total_items} menciones analizadas` : "Escucha social",
+    badgeColor: "bg-fuchsia-100 text-fuchsia-800",
+    icon: <ChatBubbleLeftRightIcon className="w-5 h-5 text-fuchsia-600" />,
+  };
+
+  return (
+    <div className={`border rounded-xl transition-all duration-300 overflow-hidden ${isOpen ? 'bg-white border-slate-300 shadow-md' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+      {/* Header */}
+      <div className="p-5 cursor-pointer" onClick={onToggle}>
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex-shrink-0 hidden md:block p-2 bg-slate-50 rounded-lg">
+            {config.icon}
+          </div>
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-slate-800">{config.title}</h3>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${config.badgeColor}`}>
+                {config.badge}
+              </span>
+            </div>
+            <p className="text-sm text-slate-500">{config.subtitle}</p>
+          </div>
+
+          <div className="flex-shrink-0 md:self-center mt-2 md:mt-0">
+             <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isOpen ? 'bg-slate-100' : 'bg-slate-50'}`}>
+                <ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      {isOpen && (
+        <div className="px-5 pb-6 pt-2 border-t border-slate-100 animate-fade-in bg-slate-50/50">
+            
+            {/* --- SOCIAL LISTENING VIEW (P2) --- */}
+            {!isMarket && socialData && (
+                <div className="mt-4">
+                     {/* Tabs Navigation */}
+                     <div className="flex space-x-1 bg-slate-200/60 p-1 rounded-lg inline-flex mb-6">
+                         {[
+                             { id: 'dolores', label: 'Dolores', icon: ExclamationTriangleIcon },
+                             { id: 'fallos', label: 'Fallos de Competencia', icon: XCircleIcon },
+                             { id: 'objeciones', label: 'Objeciones', icon: ShieldExclamationIcon }
+                         ].map(tab => {
+                             const Icon = tab.icon;
+                             return (
+                                 <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id as any)}
+                                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                                        activeTab === tab.id 
+                                        ? 'bg-white text-slate-800 shadow-sm' 
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                                    }`}
+                                 >
+                                    <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400'}`} />
+                                    {tab.label}
+                                    <span className="ml-1.5 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full text-xs">
+                                        {socialData[tab.id as 'dolores' | 'fallos' | 'objeciones']?.length || 0}
+                                    </span>
+                                 </button>
+                             );
+                         })}
+                     </div>
+
+                     {/* Content List */}
+                     <div className="space-y-4">
+                        {activeTab === 'dolores' && socialData.dolores.map((item, idx) => (
+                            <SocialItemCard key={idx} item={item} type="dolor" />
+                        ))}
+                        {activeTab === 'fallos' && socialData.fallos.map((item, idx) => (
+                            <SocialItemCard key={idx} item={item} type="fallo" />
+                        ))}
+                        {activeTab === 'objeciones' && socialData.objeciones.map((item, idx) => (
+                            <SocialItemCard key={idx} item={item} type="objecion" />
+                        ))}
+
+                        {/* Empty State */}
+                        {socialData[activeTab].length === 0 && (
+                             <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg bg-white/50">
+                                 <p className="text-slate-400 font-medium">No se encontraron registros para esta categoría.</p>
+                             </div>
+                        )}
+                     </div>
+                </div>
+            )}
+
+            {/* --- MARKET RESEARCH VIEW (P1) --- */}
+            {isMarket && marketData && (
+                <div className="space-y-8 mt-4">
+                    {/* Resumen */}
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Resumen ejecutivo</h4>
+                        <p className="text-slate-700 whitespace-pre-wrap leading-relaxed">
+                        {marketData.ResumenEjecutivo}
+                        </p>
+                    </div>
+
+                    {/* Tabla Datos */}
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 px-1">Evidencias y datos clave</h4>
+                        <div className="overflow-hidden border border-slate-200 rounded-xl bg-white shadow-sm">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                            <tr>
+                                <th className="px-4 py-3 font-semibold">Indicador / Estudio</th>
+                                <th className="px-4 py-3 font-semibold">Dato destacado</th>
+                                <th className="px-4 py-3 font-semibold">Fuente</th>
+                                <th className="px-4 py-3 font-semibold">Año</th>
+                            </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                            {marketData.EvidenciasYDatos?.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 font-medium text-slate-800">{item.IndicadorEstudio}</td>
+                                <td className="px-4 py-3 text-slate-700">{item.DatoPorcentaje}</td>
+                                <td className="px-4 py-3 text-slate-600">
+                                    {item.URL ? (
+                                    <a href={item.URL} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline flex items-center gap-1">
+                                        {item.FuenteEntidad} <ExternalLinkIcon className="w-3 h-3" />
+                                    </a>
+                                    ) : (
+                                    <span>{item.FuenteEntidad}</span>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 text-slate-500">{item.Ano}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+
+                    {/* Cards Dolencias */}
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 px-1">Mecanismos y dolencias</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {marketData.DolenciasQueAlivia?.map((item, idx) => (
+                            <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <h5 className="font-bold text-slate-800 mb-2 text-lg">{item.DolorSintoma}</h5>
+                            <p className="text-sm text-slate-600 mb-4 leading-relaxed">{item.EvidenciaMecanismo}</p>
+                            <div className="flex items-center justify-between text-xs pt-3 border-t border-slate-100">
+                                <span className="text-slate-400 font-medium truncate max-w-[60%]">{item.Fuente}</span>
+                                {item.URL && (
+                                    <a href={item.URL} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1">
+                                    Ver estudio <ExternalLinkIcon className="w-3 h-3" />
+                                    </a>
+                                )}
+                            </div>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+
+                    {/* Insights Tags */}
+                    {marketData.InsightsPublicitarios && marketData.InsightsPublicitarios.length > 0 && (
+                        <div>
+                             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3 px-1">Insights publicitarios</h4>
+                             <div className="flex flex-wrap gap-2">
+                                {marketData.InsightsPublicitarios.map((insight, idx) => (
+                                    <span key={idx} className="inline-block px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg border border-indigo-100">
+                                        {insight}
+                                    </span>
+                                ))}
+                             </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ContextBlock: React.FC<{ marketData: MarketContextData | null; socialData: SocialContextData | null }> = ({ marketData, socialData }) => {
+  const [openSection, setOpenSection] = useState<'market' | 'social' | null>(null);
+
+  if (!marketData && !socialData) return null;
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-slate-800">Conoce el contexto antes de elegir avatares</h2>
+        <p className="text-slate-500 mt-1">Accede al research de mercado y a la escucha social para tomar decisiones con cabeza.</p>
+      </div>
+      
+      <div className="space-y-4">
+        {marketData && (
+          <ContextAccordionItem 
+            type="market" 
+            marketData={marketData} 
+            isOpen={openSection === 'market'} 
+            onToggle={() => setOpenSection(openSection === 'market' ? null : 'market')} 
+          />
+        )}
+        
+        {socialData && (
+          <ContextAccordionItem 
+            type="social" 
+            socialData={socialData} 
+            isOpen={openSection === 'social'} 
+            onToggle={() => setOpenSection(openSection === 'social' ? null : 'social')} 
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// --- Main Page ---
 
 const ProjectAvatarsPage: React.FC = () => {
     const { id: projectId } = useParams<{ id: string }>();
-    const navigate = useNavigate();
     const [avatars, setAvatars] = useState<NormalizedAvatar[]>([]);
-    const [contexto1, setContexto1] = useState<Contexto1 | null>(null);
-    const [contexto2, setContexto2] = useState<Contexto2 | null>(null);
+    
+    // Progress Map: AvatarId -> Count of outputs
+    const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+    
+    // Context Data State
+    const [marketContext, setMarketContext] = useState<MarketContextData | null>(null);
+    const [socialContext, setSocialContext] = useState<SocialContextData | null>(null);
+    
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'c1' | 'c2'>('c1');
-    const [modalAvatar, setModalAvatar] = useState<NormalizedAvatar | null>(null);
-    const [toast, setToast] = useState<ToastMessage | null>(null);
-    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
-    
-    const storageKey = useMemo(() => `mts:selectedSlots:${projectId}`, [projectId]);
 
-    const [selectedSlots, setSelectedSlots] = useState<number[]>(() => {
-        try {
-            const item = window.localStorage.getItem(storageKey);
-            return item ? JSON.parse(item) : [];
-        } catch (error) {
-            console.warn(`Error reading localStorage key “${storageKey}”:`, error);
-            return [];
+    const extractContextData = (content: any, kind: 'context_p1' | 'context_p2'): any => {
+        if (!content) return null;
+        let parsed = content;
+        if (typeof content === 'string') {
+            try { parsed = JSON.parse(content); } catch { return null; }
         }
-    });
 
-    useEffect(() => {
-        try {
-            window.localStorage.setItem(storageKey, JSON.stringify(selectedSlots));
-        } catch (error) {
-            console.warn(`Error setting localStorage key “${storageKey}”:`, error);
+        if (kind === 'context_p1') {
+             const root = parsed.p1_contexto || parsed;
+             return {
+                ResumenEjecutivo: root.ResumenEjecutivo || '',
+                EvidenciasYDatos: Array.isArray(root.EvidenciasYDatos) ? root.EvidenciasYDatos : [],
+                DolenciasQueAlivia: Array.isArray(root.DolenciasQueAlivia) ? root.DolenciasQueAlivia : [],
+                InsightsPublicitarios: Array.isArray(root.InsightsPublicitarios) ? root.InsightsPublicitarios : []
+             } as MarketContextData;
+        } else {
+             // kind === 'context_p2'
+             const root = parsed.p2_contexto || parsed;
+             
+             // Extract raw arrays based on provided keys
+             const rawDolores = Array.isArray(root.cazador_dolor) ? root.cazador_dolor : [];
+             const rawFallos = Array.isArray(root.cazador_fallos) ? root.cazador_fallos : [];
+             const rawObjeciones = Array.isArray(root.cazador_objeciones) ? root.cazador_objeciones : [];
+             
+             const mapToSocialItem = (item: any, type: 'dolor' | 'fallo' | 'objecion'): SocialItem => {
+                 let displayTag = 'Detectado';
+                 let displaySource = 'Fuente desconocida';
+                 let cita = item.cita || '';
+                 
+                 // Normalize based on type specific fields
+                 if (type === 'dolor') {
+                     displayTag = item.dolor_validado || 'Dolor validado';
+                     displaySource = item.fuente || 'Fuente externa';
+                 } else if (type === 'fallo') {
+                     displayTag = item.motivo_fallo || 'Fallo detectado';
+                     displaySource = item.producto_criticado || 'Producto competencia';
+                 } else if (type === 'objecion') {
+                     // Specific mapping for objeciones based on request:
+                     // duda_textual -> cita
+                     // freno_mental -> displayTag
+                     cita = item.duda_textual || item.cita || '';
+                     displayTag = item.freno_mental || item.objecion_validada || 'Objeción';
+                     displaySource = item.fuente || 'Fuente externa';
+                 }
+
+                 return {
+                     cita: cita,
+                     url: item.url || '#',
+                     displayTag,
+                     displaySource
+                 };
+             };
+
+             const dolores = rawDolores.map((i: any) => mapToSocialItem(i, 'dolor'));
+             const fallos = rawFallos.map((i: any) => mapToSocialItem(i, 'fallo'));
+             const objeciones = rawObjeciones.map((i: any) => mapToSocialItem(i, 'objecion'));
+             
+             return {
+                 dolores,
+                 fallos,
+                 objeciones,
+                 total_items: dolores.length + fallos.length + objeciones.length
+             } as SocialContextData;
         }
-    }, [selectedSlots, storageKey]);
-    
+    };
 
-    useEffect(() => {
-        if (toast) {
-            const timer = setTimeout(() => setToast(null), 5000);
-            return () => clearTimeout(timer);
-        }
-    }, [toast]);
-
+    // Initial Fetch
     const fetchData = useCallback(async () => {
         if (!projectId) return;
         setIsLoading(true);
         setError(null);
         try {
-            const avatarsPromise = supabase
-                .from('avatars')
-                .select('id, project_id, slot, etiqueta, profile, is_selected, created_at')
-                .eq('project_id', projectId)
-                .order('slot');
-            
-            const contextsPromise = supabase
-                .from('contexts')
-                .select('kind, content')
-                .eq('project_id', projectId)
-                .in('kind', ['context_p1', 'context_p2']);
+            const [avatarsRes, contextsRes, outputsRes] = await Promise.all([
+                supabase.from('avatars').select('id, project_id, slot, etiqueta, profile').eq('project_id', projectId).order('slot'),
+                supabase.from('contexts').select('kind, content').eq('project_id', projectId).in('kind', ['context_p1', 'context_p2']),
+                // Initial output count check
+                supabase.from('avatar_master_outputs').select('avatar_id, section').eq('project_id', projectId)
+            ]);
 
-            const [{ data: avatarsData, error: avatarsError }, { data: contextsData, error: contextsError }] = await Promise.all([avatarsPromise, contextsPromise]);
+            if (avatarsRes.error) throw avatarsRes.error;
+            if (contextsRes.error) throw contextsRes.error;
+            if (outputsRes.error) throw outputsRes.error;
 
-            if (avatarsError) throw avatarsError;
-            if (contextsError) throw contextsError;
+            setAvatars((avatarsRes.data || []).map(normalizeAvatar));
+
+            // Parse Contexts
+            const p1Row = contextsRes.data?.find(c => c.kind === 'context_p1');
+            const p2Row = contextsRes.data?.find(c => c.kind === 'context_p2');
+            setMarketContext(extractContextData(p1Row?.content, 'context_p1'));
+            setSocialContext(extractContextData(p2Row?.content, 'context_p2'));
+
+            // Calculate Progress
+            const newProgressMap: Record<string, Set<string>> = {};
+            (outputsRes.data || []).forEach((row: any) => {
+                if(!newProgressMap[row.avatar_id]) newProgressMap[row.avatar_id] = new Set();
+                newProgressMap[row.avatar_id].add(row.section);
+            });
             
-            const mappedAvatars: NormalizedAvatar[] = (avatarsData || []).map(normalizeAvatar);
-            setAvatars(mappedAvatars);
-            
-            const c1 = contextsData?.find(c => c.kind === 'context_p1');
-            const c2 = contextsData?.find(c => c.kind === 'context_p2');
-            setContexto1(c1?.content as Contexto1 || null);
-            setContexto2(c2?.content as Contexto2 || null);
+            const finalCountMap: Record<string, number> = {};
+            Object.keys(newProgressMap).forEach(key => {
+                finalCountMap[key] = newProgressMap[key].size;
+            });
+            setProgressMap(finalCountMap);
 
         } catch (err: any) {
-            setError('Error al cargar datos. ' + err.message);
+            setError('Error al cargar datos: ' + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -292,219 +656,87 @@ const ProjectAvatarsPage: React.FC = () => {
         fetchData();
     }, [fetchData]);
 
-    const handleToggleSelection = (slot: number) => {
-        setSelectedSlots(prev =>
-            prev.includes(slot) ? prev.filter(s => s !== slot) : [...prev, slot]
-        );
-    };
+    
+    // Polling for Progress updates
+    useEffect(() => {
+        if (!projectId) return;
 
-    const handleClearSelection = () => {
-        setSelectedSlots([]);
-    };
-
-    const handleAnalyze = async () => {
-        if (!projectId || selectedSlots.length === 0) return;
-        setIsAnalyzing(true);
-        setToast(null);
-
-        try {
-            const { data: briefData, error: briefError } = await supabase
-                .from('briefs')
-                .select('id')
-                .eq('project_id', projectId)
-                .single();
-
-            if (briefError || !briefData) {
-                throw new Error('No se pudo encontrar el brief asociado a este proyecto.');
+        const refreshProgress = async () => {
+            const { data, error } = await supabase
+                .from('avatar_master_outputs')
+                .select('avatar_id, section')
+                .eq('project_id', projectId);
+            
+            if (!error && data) {
+                const newProgressMap: Record<string, Set<string>> = {};
+                data.forEach((row: any) => {
+                    if(!newProgressMap[row.avatar_id]) newProgressMap[row.avatar_id] = new Set();
+                    newProgressMap[row.avatar_id].add(row.section);
+                });
+                
+                const finalCountMap: Record<string, number> = {};
+                Object.keys(newProgressMap).forEach(key => {
+                    finalCountMap[key] = newProgressMap[key].size;
+                });
+                setProgressMap(finalCountMap);
             }
+        };
 
-            const selectedAvatarsForPayload = avatars
-                .filter(a => selectedSlots.includes(a.slot))
-                .map(a => ({
-                    avatar_id: a.id,
-                    slot: a.slot,
-                    name: a.title,
-                    headline: a.headline,
-                    data: a.data,
-                }));
-            
-            const payload = {
-                project_id: projectId,
-                brief_id: briefData.id,
-                avatars: selectedAvatarsForPayload,
-                run_sequential: true,
-                source: 'ui',
-            };
+        const intervalId = setInterval(refreshProgress, 5000); // Poll every 5 seconds
+        return () => clearInterval(intervalId);
+    }, [projectId]);
 
-            const response = await fetch('https://sswebhook.made-to-scale.com/webhook/detalle-avatar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
 
-            if (!response.ok) {
-                const errorBody = await response.text();
-                throw new Error(`Error del servidor (${response.status}): ${errorBody}`);
-            }
-
-            const responseData = await response.json();
-            const acceptedCount = responseData.accepted?.length || 0;
-            setToast({ message: `Análisis encolado para ${acceptedCount} avatares. Puedes seguir el progreso en Resultados.`, type: 'success' });
-            
-            handleClearSelection();
-            
-            navigate(`/proyectos/${projectId}/resultados`);
-
-        } catch (err: any) {
-            setToast({ message: err.message || 'Ocurrió un error al iniciar el análisis.', type: 'error' });
-        } finally {
-            setIsAnalyzing(false);
-        }
-    };
-
-    if (isLoading) return (
-        <div>
-            <div className="animate-pulse">
-                <div className="h-8 w-1/3 bg-slate-200 rounded-md"></div>
-                <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1 space-y-4">
-                       <div className="h-10 w-full bg-slate-200 rounded-md"></div>
-                       <div className="h-64 w-full bg-slate-200 rounded-md"></div>
-                    </div>
-                    <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {Array.from({length: 4}).map((_, i) => <div key={i} className="h-60 bg-slate-200 rounded-lg"></div>)}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+    if (isLoading) return <div className="flex justify-center items-center p-20"><Spinner className="w-10 h-10 text-slate-300" /></div>;
     if (error) return <div className="text-center p-8 text-red-600 bg-red-50 rounded-lg">{error}</div>;
 
     return (
     <>
-      <div className="pb-24"> {/* Padding bottom to avoid overlap with sticky bar */}
-        <h2 className="text-3xl font-bold text-slate-800">Elige tus Avatares para Análisis</h2>
-        <p className="mt-1 text-slate-600">Revisa el contexto y selecciona uno o más avatares para analizar.</p>
+        <div>
+            <h2 className="text-3xl font-bold text-slate-800 mb-2">Avatares Estratégicos</h2>
+            <p className="text-slate-600 max-w-3xl mb-8">
+                Aquí tienes a tus avatares generados. Entra en cada uno para ver su evolución en tiempo real.
+            </p>
 
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Contexts */}
-            <aside className="lg:col-span-1">
-                <div className="sticky top-8">
-                    <div className="flex space-x-1 p-1 bg-slate-100 rounded-lg">
-                        <button onClick={() => setActiveTab('c1')} className={`w-full py-2 text-sm font-semibold rounded-md transition-colors ${activeTab === 'c1' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-600 hover:bg-white/50'}`}>Contexto 1</button>
-                        <button onClick={() => setActiveTab('c2')} className={`w-full py-2 text-sm font-semibold rounded-md transition-colors ${activeTab === 'c2' ? 'bg-white text-slate-800 shadow-sm' : 'bg-transparent text-slate-600 hover:bg-white/50'}`}>Contexto 2</button>
-                    </div>
-                    <div className="mt-4 p-4 bg-slate-50 border rounded-lg h-[600px] overflow-y-auto">
-                        {activeTab === 'c1' && (contexto1 ? (
-                            <div className="space-y-6 text-sm">
-                                <div><h4 className="font-bold text-slate-700 mb-1">Resumen Ejecutivo</h4><p className="text-slate-600 whitespace-pre-wrap">{contexto1.ResumenEjecutivo}</p></div>
-                                <div><h4 className="font-bold text-slate-700 mb-2">Evidencias y Datos</h4>
-                                    <table className="w-full text-left text-xs">
-                                        <thead className="bg-slate-200"><tr className="text-slate-600">
-                                            <th className="p-2">Indicador</th><th className="p-2">Dato</th><th className="p-2">Fuente</th>
-                                        </tr></thead>
-                                        <tbody>{contexto1.EvidenciasYDatos.map((e,i) => <tr key={i} className="border-b"><td className="p-2">{e.IndicadorEstudio}</td><td className="p-2">{e.DatoPorcentaje||'N/A'}</td><td className="p-2">{e.URL ? <a href={e.URL} target="_blank" className="text-blue-600 hover:underline">{e.FuenteEntidad || 'Link'}</a> : e.FuenteEntidad}</td></tr>)}</tbody>
-                                    </table>
-                                </div>
-                                <div><h4 className="font-bold text-slate-700 mb-2">Dolencias que alivia</h4><ul className="space-y-3">{contexto1.DolenciasQueAlivia.map((d,i) => <li key={i}><strong className="block text-slate-800">{d.DolorSintoma}</strong><p className="text-slate-600">{d.EvidenciaMecanismo}</p></li>)}</ul></div>
-                                <div><h4 className="font-bold text-slate-700 mb-2">Insights Publicitarios</h4><ul className="list-disc list-inside space-y-1 text-slate-600">{contexto1.InsightsPublicitarios.map((insight,i) => <li key={i}>{insight}</li>)}</ul></div>
-                            </div>
-                        ) : <p>Contexto 1 no disponible.</p>)}
-                        
-                        {activeTab === 'c2' && (contexto2 ? (
-                             <div className="space-y-4 text-sm">
-                                <div>
-                                    <p className="text-slate-600"><span className="font-semibold">Query:</span> <code className="text-xs bg-slate-200 p-1 rounded">{contexto2.query}</code></p>
-                                    <p className="text-slate-600"><span className="font-semibold">Resultados:</span> {contexto2.total_encontrados}</p>
-                                </div>
-                                <div className="space-y-4">{contexto2.comentarios.map((c,i) => (
-                                    <div key={i} className="p-3 bg-white border rounded-md">
-                                        <div dangerouslySetInnerHTML={{ __html: c.comentario }} className="prose prose-sm max-w-none text-slate-800" />
-                                        <div className="mt-2 flex justify-between items-center">
-                                            <SentimentBadge sentiment={c.sentimiento} />
-                                            {c.url && <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs flex items-center">Ver original <ExternalLinkIcon className="w-3 h-3 ml-1" /></a>}
-                                        </div>
-                                    </div>
-                                ))}</div>
-                            </div>
-                        ) : <p>Contexto 2 no disponible.</p>)}
-                    </div>
+            <div className="space-y-8">
+                {/* Context Block */}
+                <ContextBlock marketData={marketContext} socialData={socialContext} />
+
+                <div>
+                    <h3 className="text-2xl font-bold text-slate-800 mb-6">Perfiles Detectados</h3>
+                    {avatars.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {avatars.map(avatar => {
+                                const count = progressMap[avatar.id] || 0;
+                                const isReady = count >= 10;
+                                
+                                return (
+                                    <AvatarCard
+                                        key={avatar.id}
+                                        avatar={avatar}
+                                        progress={{
+                                            avatarId: avatar.id,
+                                            sectionsCount: count,
+                                            isReady
+                                        }}
+                                        projectId={projectId!}
+                                    />
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="text-center py-16 mt-4 border-2 border-dashed border-slate-300 rounded-lg bg-white">
+                            <SparklesIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <h3 className="text-xl font-semibold text-slate-700">Sin avatares generados</h3>
+                            <p className="mt-2 text-slate-500">Ve a la pestaña "Brief" para generar el contexto y los avatares.</p>
+                            <Link to={`/proyectos/${projectId}/brief`} className="mt-4 inline-block text-indigo-600 font-medium hover:underline">
+                                Ir al Brief
+                            </Link>
+                        </div>
+                    )}
                 </div>
-            </aside>
-
-            {/* Right Column: Avatars */}
-            <main className="lg:col-span-2">
-                {avatars.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {avatars.map(avatar => {
-                            const isSelectedForAnalysis = selectedSlots.includes(avatar.slot);
-                            const age = avatar.data?.rango_edad;
-                            const gender = avatar.data?.sexo;
-                            const income = avatar.data?.nivel_ingresos;
-                            return (
-                                <div key={avatar.id} 
-                                    onClick={() => handleToggleSelection(avatar.slot)}
-                                    className={`relative bg-white rounded-lg border shadow-sm cursor-pointer transition-all duration-200 ${isSelectedForAnalysis ? 'border-green-500 ring-2 ring-green-500/50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                    
-                                    {isSelectedForAnalysis && (
-                                        <div className="absolute top-2 left-2 bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                                        </div>
-                                    )}
-
-                                    <div className="p-5">
-                                        <h3 className="font-bold text-lg text-slate-800">{avatar.title}</h3>
-                                        {avatar.headline ? (
-                                            <p className="text-sm text-slate-600 h-10 mt-1 line-clamp-2">{avatar.headline}</p>
-                                        ) : (
-                                            <div className="h-10 mt-1"></div>
-                                        )}
-                                        <div className="flex flex-wrap gap-2 mt-3 h-8 overflow-hidden">
-                                            {age && <span className="text-xs bg-slate-100 px-2 py-1 rounded">{age}</span>}
-                                            {gender && <span className="text-xs bg-slate-100 px-2 py-1 rounded">{gender}</span>}
-                                            {income && <span className="text-xs bg-slate-100 px-2 py-1 rounded line-clamp-1">{income}</span>}
-                                        </div>
-                                    </div>
-                                    <div className="p-4 bg-slate-50/70 border-t rounded-b-lg flex items-center justify-between">
-                                        <button onClick={(e) => { e.stopPropagation(); setModalAvatar(avatar); }} className="text-sm font-semibold text-slate-700 hover:text-slate-900">Ver ficha</button>
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
-                ) : (
-                     <div className="text-center py-16 border-2 border-dashed border-slate-300 rounded-lg">
-                        <h3 className="text-xl font-semibold text-slate-700">Sin avatares</h3>
-                        <p className="mt-2 text-slate-500">No se encontraron avatares generados para este proyecto.</p>
-                     </div>
-                )}
-            </main>
-        </div>
-      </div>
-
-      <AvatarDetailModal avatar={modalAvatar} onClose={() => setModalAvatar(null)} />
-      
-      {/* Sticky Bottom Bar */}
-      <div className={`fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm border-t border-slate-200 transition-transform duration-300 ${selectedSlots.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
-            <div className="flex items-center justify-between h-20">
-                <div className="flex items-center space-x-4">
-                    <p className="font-semibold text-slate-800">{selectedSlots.length} avatares seleccionados</p>
-                    <button onClick={handleClearSelection} className="text-sm text-slate-600 hover:underline">Limpiar selección</button>
-                </div>
-                <button onClick={handleAnalyze} disabled={isAnalyzing || selectedSlots.length === 0} className="px-6 py-3 text-base font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed">
-                    {isAnalyzing ? 'Encolando...' : `Analizar ${selectedSlots.length} seleccionados`}
-                </button>
             </div>
         </div>
-      </div>
-      
-      {toast && (
-          <div className={`fixed bottom-5 right-5 text-white px-5 py-3 rounded-lg shadow-lg flex items-center z-50 ${toast.type === 'success' ? 'bg-slate-900' : 'bg-red-600'}`}>
-              <CheckCircleIcon className={`w-5 h-5 mr-3 flex-shrink-0 ${toast.type === 'success' ? 'text-green-400' : 'text-red-300'}`} />
-              {toast.message}
-          </div>
-      )}
     </>
     );
 };

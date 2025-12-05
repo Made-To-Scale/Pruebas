@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import ProjectCard from '../components/ProjectCard';
@@ -93,7 +94,7 @@ const ProjectsPage: React.FC = () => {
           </p>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="mt-6 px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors duration-200 shadow-sm"
+            className="mt-6 px-4 py-2 bg-mts-green text-mts-navy text-sm font-bold rounded-lg hover:bg-green-400 transition-colors duration-200 shadow-sm"
           >
             Crear Nuevo Proyecto
           </button>
@@ -116,7 +117,7 @@ const ProjectsPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-slate-800">Proyectos</h1>
         <button 
           onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors duration-200 shadow-sm"
+          className="px-4 py-2 bg-mts-green text-mts-navy text-sm font-bold rounded-lg hover:bg-green-400 transition-colors duration-200 shadow-sm"
         >
           Nuevo Proyecto
         </button>

@@ -1,5 +1,5 @@
 {
-  "name": "Supabase MTS Dashboard",
+  "name": "NOVA 360",
   "description": "A clean and minimalist dashboard interface for managing projects, briefs, avatars, and other assets within a Supabase project with an 'mts' schema.",
   "requestFramePermissions": []
 }

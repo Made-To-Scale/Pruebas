@@ -142,7 +142,7 @@ const Block9Content: React.FC<{ sections: LevelBlock[] }> = ({ sections }) => {
                 <SubCard title="Dolores normalizados">
                     <DataTable
                         headers={["Dolor", "Estado", "Por qué es clave", "Cómo detectarlo", "Acción de marketing"]}
-                        rows={(doloresData.dolores || []).map((d: any) => [d.dolor, d.estado, d.por_que_clave, d.como_detectarlo, d.accion_marketing])}
+                        rows={(Array.isArray(doloresData.dolores) ? doloresData.dolores : []).map((d: any) => [d.dolor, d.estado, d.por_que_clave, d.como_detectarlo, d.accion_marketing])}
                     />
                     <div className="grid md:grid-cols-2 gap-6">
                         <BulletList title="Titulares sugeridos" items={doloresData.titulares} />
@@ -157,7 +157,7 @@ const Block9Content: React.FC<{ sections: LevelBlock[] }> = ({ sections }) => {
                              <SubCard key={dolor} title={<span className="font-normal"><span className="font-semibold">Dolor:</span> {dolor}</span>}>
                                 <DataTable
                                     headers={["Emoción", "Pensamiento"]}
-                                    rows={pensamientos.map((p: any) => [p.emocion, p.pensamiento])}
+                                    rows={(Array.isArray(pensamientos) ? pensamientos : []).map((p: any) => [p.emocion, p.pensamiento])}
                                 />
                             </SubCard>
                         ))}
@@ -167,11 +167,11 @@ const Block9Content: React.FC<{ sections: LevelBlock[] }> = ({ sections }) => {
             {escenasData && (
                 <SubCard title="Escenas clave">
                     <div className="space-y-4">
-                        {(escenasData.escenas_clave || []).map((escena: any, index: number) => (
+                        {(Array.isArray(escenasData.escenas_clave) ? escenasData.escenas_clave : []).map((escena: any, index: number) => (
                              <SubCard key={index} title={<span className="font-normal"><span className="font-semibold">Dolor Identificado:</span> {escena.dolor_identificado}</span>}>
                                 <DataTable
                                     headers={["Momento", "Lugar", "Acción", "Pensamiento", "Sensaciones", "Cierre"]}
-                                    rows={(escena.escenas || []).map((e: any) => [e.momento, e.lugar, e.accion, e.pensamiento, e.sensaciones, e.cierre])}
+                                    rows={(Array.isArray(escena.escenas) ? escena.escenas : []).map((e: any) => [e.momento, e.lugar, e.accion, e.pensamiento, e.sensaciones, e.cierre])}
                                 />
                             </SubCard>
                         ))}

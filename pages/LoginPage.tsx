@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -55,7 +56,7 @@ const LoginPage: React.FC = () => {
     <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">
       <div className="w-full max-w-sm p-8 space-y-6 bg-white rounded-xl shadow-lg">
         <div>
-          <h1 className="text-2xl font-bold text-center text-slate-800 tracking-wider">MTS PANEL</h1>
+          <h1 className="text-2xl font-bold text-center text-mts-navy tracking-wider">MTS PANEL</h1>
           <h2 className="mt-4 text-xl font-semibold text-center text-slate-700">
             {isSignUp ? 'Crear una cuenta nueva' : 'Bienvenido'}
           </h2>
@@ -71,7 +72,7 @@ const LoginPage: React.FC = () => {
                 type="email"
                 autoComplete="email"
                 required
-                className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-500 focus:border-slate-500 sm:text-sm"
+                className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-mts-green focus:border-mts-green sm:text-sm"
                 placeholder="Correo electrónico"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -85,7 +86,7 @@ const LoginPage: React.FC = () => {
                 type="password"
                 autoComplete={isSignUp ? "new-password" : "current-password"}
                 required
-                className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-500 focus:border-slate-500 sm:text-sm"
+                className="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-mts-green focus:border-mts-green sm:text-sm"
                 placeholder="Contraseña"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -99,7 +100,7 @@ const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-slate-800 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 disabled:opacity-50 transition-colors"
+              className="w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-bold rounded-lg text-mts-navy bg-mts-green hover:bg-green-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-mts-green disabled:opacity-50 transition-colors"
             >
               {isLoading ? 'Procesando...' : (isSignUp ? 'Crear cuenta' : 'Entrar')}
             </button>
@@ -108,7 +109,7 @@ const LoginPage: React.FC = () => {
 
         <p className="text-sm text-center text-slate-600">
           {isSignUp ? '¿Ya tienes una cuenta?' : '¿No tienes una cuenta?'}
-          <button onClick={() => { setIsSignUp(!isSignUp); setError(null); }} className="ml-1 font-medium text-slate-700 hover:text-slate-900 underline">
+          <button onClick={() => { setIsSignUp(!isSignUp); setError(null); }} className="ml-1 font-medium text-mts-navy hover:text-black underline">
             {isSignUp ? 'Entrar' : 'Crear cuenta'}
           </button>
         </p>
